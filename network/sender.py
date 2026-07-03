@@ -5,6 +5,7 @@ from cryptography_layer.aes_handler import AESHandler
 from network.payload import PayloadBuilder
 from network.utils import send_message, receive_message
 from ack.acknowledgement import AcknowledgementHandler
+import os
 
 HOST = '127.0.0.1'
 PORT = 5003          # Routes through attacker
@@ -24,7 +25,7 @@ def send_file(filepath: str, encrypted: bool = True,
     with open(filepath, 'rb') as f:
         file_bytes = f.read()
 
-    filename = filepath.split("\\")[-1]
+    filename = os.path.basename(filepath)
     print(f"[SENDER] Loaded '{filename}' ({len(file_bytes)} bytes).")
     print(f"[SENDER] Mode: {'🔒 ENCRYPTED' if encrypted else '⚠️  UNENCRYPTED (plaintext)'}")
 

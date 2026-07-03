@@ -6,6 +6,7 @@ from cryptography_layer.integrity import IntegrityChecker
 from network.payload import PayloadBuilder
 from network.utils import send_message, receive_message
 from ack.acknowledgement import AcknowledgementHandler
+from transfer_logger import TransferLogger
 
 SAVE_DIRECTORY = "received_files"
 HOST = '127.0.0.1'
@@ -84,6 +85,24 @@ def _receive_encrypted(conn, rsa, aes, payload_builder,
         filename, received_hash, file_bytes = payload_builder.parse(decrypted_payload)
         is_intact = checker.verify(file_bytes, received_hash)
 
+        # Log the session
+        logger = TransferLogger()
+        session_id = logger.log_session(
+            filename        = filename,
+            file_size       = len(file_bytes),
+            sender_host     = conn.getpeername()[0],
+            receiver_host   = HOST,
+            encrypted       = True,
+            tamper_detected = not is_intact
+        )
+        logger.log_integrity(
+            session_id      = session_id,
+            original_hash   = received_hash,
+            recomputed_hash = checker.compute_hash(file_bytes),
+            tamper_detected = not is_intact
+        )
+        logger.close()
+
         if is_intact:
             save_path = os.path.join(save_dir, filename)
             with open(save_path, 'wb') as f:
@@ -97,9 +116,28 @@ def _receive_encrypted(conn, rsa, aes, payload_builder,
             send_message(conn, ack)
 
     except Exception as e:
-        print(f"[RECEIVER] ❌ TAMPER DETECTED — payload unparseable: {e}")
-        ack = ack_handler.create_signed_ack("ACK:TAMPERED", rsa.private_key)
-        send_message(conn, ack)
+            print(f"[RECEIVER] ❌ TAMPER DETECTED — payload unparseable: {e}")
+
+            # Log with unknown hashes since payload couldn't be parsed
+            logger = TransferLogger()
+            session_id = logger.log_session(
+                filename        = "unknown",
+                file_size       = 0,
+                sender_host     = conn.getpeername()[0],
+                receiver_host   = HOST,
+                encrypted       = True,
+                tamper_detected = True
+            )
+            logger.log_integrity(
+                session_id      = session_id,
+                original_hash   = "unparseable",
+                recomputed_hash = "unparseable",
+                tamper_detected = True
+            )
+            logger.close()
+
+            ack = ack_handler.create_signed_ack("ACK:TAMPERED", rsa.private_key)
+            send_message(conn, ack)
 
 
 def _receive_plaintext(conn, save_dir):
@@ -122,6 +160,23 @@ def _receive_plaintext(conn, save_dir):
     print(f"[RECEIVER] File saved to '{save_path}'.")
 
     send_message(conn, b"ACK:OK")
+
+    logger = TransferLogger()
+    session_id = logger.log_session(
+        filename        = filename,
+        file_size       = len(file_bytes),
+        sender_host     = "unknown",
+        receiver_host   = HOST,
+        encrypted       = False,
+        tamper_detected = False
+    )
+    logger.log_integrity(
+        session_id      = session_id,
+        original_hash   = "N/A — plaintext transfer",
+        recomputed_hash = "N/A — plaintext transfer",
+        tamper_detected = False
+    )
+    logger.close()
 
 
 if __name__ == "__main__":

@@ -74,16 +74,16 @@ class BaseWindow:
     """
 
     COLOURS = {
-        "bg"        : "#1e1e2e",   # Dark background
-        "panel"     : "#2a2a3e",   # Slightly lighter panel
-        "accent"    : "#7c3aed",   # Purple accent
-        "success"   : "#22c55e",   # Green
-        "warning"   : "#f59e0b",   # Orange
-        "error"     : "#ef4444",   # Red
-        "info"      : "#38bdf8",   # Cyan
-        "text"      : "#e2e8f0",   # Light text
-        "subtext"   : "#94a3b8",   # Dimmed text
-        "border"    : "#3f3f5a",   # Border colour
+        "bg"      : "#1e1e2e",   # Dark background
+        "panel"   : "#2a2a3e",   # Slightly lighter panel
+        "accent"  : "#7c3aed",   # Purple accent
+        "success" : "#22c55e",   # Green
+        "warning" : "#f59e0b",   # Orange
+        "error"   : "#ef4444",   # Red
+        "info"    : "#38bdf8",   # Cyan
+        "text"    : "#e2e8f0",   # Light text
+        "subtext" : "#94a3b8",   # Dimmed text
+        "border"  : "#3f3f5a",   # Border colour
     }
 
     def __init__(self, root: tk.Tk, title: str, role: str):
@@ -93,7 +93,7 @@ class BaseWindow:
 
         # Window setup
         self.root.title(title)
-        self.root.geometry("720x600")
+        self.root.geometry("820x600")
         self.root.configure(bg=self.COLOURS["bg"])
         self.root.resizable(True, True)
 
@@ -108,8 +108,7 @@ class BaseWindow:
 
     def _build_header(self, title: str):
         """Top banner showing role and title."""
-        header_frame = tk.Frame(self.root, bg=self.COLOURS["accent"],
-                                pady=12)
+        header_frame = tk.Frame(self.root, bg=self.COLOURS["accent"], pady=12)
         header_frame.pack(fill=tk.X)
 
         tk.Label(
@@ -133,19 +132,24 @@ class BaseWindow:
         pass
 
     def _build_log_panel(self):
-        """Scrollable log output area."""
-        log_frame = tk.LabelFrame(
-            self.root,
-            text=" Activity Log ",
-            font=("Consolas", 9, "bold"),
-            bg=self.COLOURS["bg"],
-            fg=self.COLOURS["subtext"],
-            bd=1,
-            relief=tk.SOLID,
-            padx=8,
-            pady=8
-        )
-        log_frame.pack(fill=tk.BOTH, expand=True, padx=12, pady=(4, 4))
+        """
+        Builds a tabbed panel:
+        - Tab 1: Activity Log (real-time output)
+        - Tab 2: Transfer History (receiver only, optional)
+        """
+        self.notebook = ttk.Style()
+        self.notebook.configure("TNotebook", background=self.COLOURS["bg"])
+        self.notebook.configure("TNotebook.Tab",
+                                background=self.COLOURS["panel"],
+                                foreground=self.COLOURS["subtext"],
+                                padding=[10, 4])
+
+        self.tabs = ttk.Notebook(self.root)
+        self.tabs.pack(fill=tk.BOTH, expand=True, padx=12, pady=(4, 4))
+
+        # Tab 1 — Activity Log
+        log_frame = tk.Frame(self.tabs, bg=self.COLOURS["bg"])
+        self.tabs.add(log_frame, text="  Activity Log  ")
 
         self.log_text = scrolledtext.ScrolledText(
             log_frame,
@@ -157,19 +161,21 @@ class BaseWindow:
             state=tk.DISABLED,
             wrap=tk.WORD
         )
-        self.log_text.pack(fill=tk.BOTH, expand=True)
+        self.log_text.pack(fill=tk.BOTH, expand=True, padx=4, pady=4)
 
-        # Colour tags for different message types
+        # Colour tags
         self.log_text.tag_config("normal",  foreground=self.COLOURS["text"])
         self.log_text.tag_config("success", foreground=self.COLOURS["success"])
         self.log_text.tag_config("warning", foreground=self.COLOURS["warning"])
         self.log_text.tag_config("error",   foreground=self.COLOURS["error"])
         self.log_text.tag_config("info",    foreground=self.COLOURS["info"])
 
+        # Tab 2 — Transfer History (only built if subclass calls it)
+        self.history_frame = tk.Frame(self.tabs, bg=self.COLOURS["bg"])
+
     def _build_status_bar(self):
         """Bottom status bar showing current state."""
         self.status_var = tk.StringVar(value="Ready")
-        self.status_colour = tk.StringVar(value=self.COLOURS["subtext"])
 
         self.status_bar = tk.Label(
             self.root,
@@ -199,12 +205,13 @@ class BaseWindow:
 
                 if tag == "status":
                     # Parse status update
-                    parts = message.replace("__STATUS__:", "").split("::")
-                    status_text  = parts[0]
-                    colour_key   = parts[1] if len(parts) > 1 else "subtext"
+                    parts       = message.replace("__STATUS__:", "").split("::")
+                    status_text = parts[0]
+                    colour_key  = parts[1] if len(parts) > 1 else "subtext"
                     self.status_var.set(status_text)
-                    self.status_bar.config(fg=self.COLOURS.get(
-                                           colour_key, self.COLOURS["subtext"]))
+                    self.status_bar.config(
+                        fg=self.COLOURS.get(colour_key, self.COLOURS["subtext"])
+                    )
                 else:
                     # Append to log panel
                     self.log_text.config(state=tk.NORMAL)
@@ -218,20 +225,16 @@ class BaseWindow:
         # Schedule next poll
         self.root.after(100, self._poll_log_queue)
 
-    def _add_network_fields(self, parent, defaults: dict) -> dict:
+    def _add_network_fields(self, parent, defaults: list) -> dict:
         """
         Adds host/port input fields to a parent frame.
-        Returns a dict of StringVar/IntVar for each field.
+        Returns a dict of StringVars keyed by label text.
 
-        defaults: {
-            "host": "127.0.0.1",
-            "port": 5002,
-            ... (extra fields as needed)
-        }
+        defaults: list of (label_text, default_value, entry_width)
         """
         vars = {}
-        col = 0
-        for label, key, width in defaults:
+        col  = 0
+        for label, value, width in defaults:
             tk.Label(
                 parent,
                 text=label,
@@ -241,8 +244,8 @@ class BaseWindow:
             ).grid(row=0, column=col, padx=(8, 2), pady=6)
             col += 1
 
-            var = tk.StringVar(value=str(key))
-            entry = tk.Entry(
+            var = tk.StringVar(value=str(value))
+            tk.Entry(
                 parent,
                 textvariable=var,
                 font=("Consolas", 9),
@@ -252,8 +255,7 @@ class BaseWindow:
                 relief=tk.FLAT,
                 width=width,
                 bd=4
-            )
-            entry.grid(row=0, column=col, padx=(0, 12), pady=6)
+            ).grid(row=0, column=col, padx=(0, 12), pady=6)
             col += 1
             vars[label] = var
 
@@ -262,7 +264,7 @@ class BaseWindow:
     def _make_button(self, parent, text: str, command,
                      colour: str = None, width: int = 18) -> tk.Button:
         """Creates a styled button."""
-        bg = colour or self.COLOURS["accent"]
+        bg  = colour or self.COLOURS["accent"]
         btn = tk.Button(
             parent,
             text=text,
@@ -279,6 +281,134 @@ class BaseWindow:
         )
         return btn
 
+    def _build_history_tab(self):
+        """
+        Builds the Transfer History tab content.
+        Called explicitly by ReceiverWindow — not shown for other roles.
+        """
+        self.tabs.add(self.history_frame, text="  Transfer History  ")
+
+        # Toolbar
+        toolbar = tk.Frame(self.history_frame, bg=self.COLOURS["panel"], pady=4)
+        toolbar.pack(fill=tk.X)
+
+        tk.Label(
+            toolbar,
+            text="Recent transfer sessions logged to transfer_log.db",
+            font=("Consolas", 9),
+            bg=self.COLOURS["panel"],
+            fg=self.COLOURS["subtext"]
+        ).pack(side=tk.LEFT, padx=12)
+
+        self._make_button(
+            toolbar, "↻  Refresh", self._refresh_history,
+            colour=self.COLOURS["border"], width=10
+        ).pack(side=tk.RIGHT, padx=8, pady=4)
+
+        # Table using ttk.Treeview
+        table_frame = tk.Frame(self.history_frame, bg=self.COLOURS["bg"])
+        table_frame.pack(fill=tk.BOTH, expand=True, padx=8, pady=4)
+
+        columns = ("id", "timestamp", "filename", "size",
+                   "mode", "status", "hash_match")
+
+        style = ttk.Style()
+        style.configure("History.Treeview",
+                        background="#0f0f1a",
+                        foreground=self.COLOURS["text"],
+                        fieldbackground="#0f0f1a",
+                        font=("Consolas", 9),
+                        rowheight=24)
+        style.configure("History.Treeview.Heading",
+                        background=self.COLOURS["panel"],
+                        foreground=self.COLOURS["subtext"],
+                        font=("Consolas", 9, "bold"))
+        style.map("History.Treeview",
+                  background=[("selected", self.COLOURS["accent"])])
+
+        self.history_tree = ttk.Treeview(
+            table_frame,
+            columns=columns,
+            show="headings",
+            style="History.Treeview"
+        )
+
+        # Column headings and widths
+        self.history_tree.heading("id",         text="ID")
+        self.history_tree.heading("timestamp",  text="Timestamp")
+        self.history_tree.heading("filename",   text="Filename")
+        self.history_tree.heading("size",       text="Size")
+        self.history_tree.heading("mode",       text="Mode")
+        self.history_tree.heading("status",     text="Status")
+        self.history_tree.heading("hash_match", text="Hash Match")
+
+        self.history_tree.column("id",         width=40,  anchor=tk.CENTER)
+        self.history_tree.column("timestamp",  width=140, anchor=tk.CENTER)
+        self.history_tree.column("filename",   width=180, anchor=tk.W)
+        self.history_tree.column("size",       width=80,  anchor=tk.CENTER)
+        self.history_tree.column("mode",       width=90,  anchor=tk.CENTER)
+        self.history_tree.column("status",     width=90,  anchor=tk.CENTER)
+        self.history_tree.column("hash_match", width=90,  anchor=tk.CENTER)
+
+        # Scrollbar
+        scrollbar = ttk.Scrollbar(table_frame, orient=tk.VERTICAL,
+                                  command=self.history_tree.yview)
+        self.history_tree.configure(yscrollcommand=scrollbar.set)
+
+        self.history_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        # Load data immediately
+        self._refresh_history()
+
+    def _refresh_history(self):
+        """
+        Clears and reloads the transfer history table from the database.
+        Called on tab build and when Refresh button is clicked.
+        """
+        try:
+            from transfer_logger import TransferLogger
+            logger   = TransferLogger()
+            sessions = logger.get_recent_sessions(limit=50)
+            logger.close()
+
+            # Clear existing rows
+            for row in self.history_tree.get_children():
+                self.history_tree.delete(row)
+
+            if not sessions:
+                self.history_tree.insert("", tk.END, values=(
+                    "-", "-", "No sessions logged yet.",
+                    "-", "-", "-", "-"
+                ))
+                return
+
+            for s in sessions:
+                mode   = "🔒 Encrypted" if s["encrypted"] else "⚠️ Plaintext"
+                status = "⚠️ TAMPERED"  if s["tamper_detected"] else "✅ Clean"
+
+                if s["hashes_match"] is None:
+                    hash_match = "N/A"
+                elif s["hashes_match"]:
+                    hash_match = "✅ Match"
+                else:
+                    hash_match = "❌ Mismatch"
+
+                size_str = f"{s['file_size']:,} B"
+
+                self.history_tree.insert("", tk.END, values=(
+                    s["session_id"],
+                    s["timestamp"],
+                    s["filename"],
+                    size_str,
+                    mode,
+                    status,
+                    hash_match
+                ))
+
+        except Exception as e:
+            queue_log(f"[LOGGER] Could not load history: {e}", "error")
+
 
 # ─────────────────────────────────────────────
 #  Receiver Window
@@ -289,6 +419,8 @@ class ReceiverWindow(BaseWindow):
         super().__init__(root,
                          title="📥  RECEIVER NODE",
                          role="receiver")
+        # Add the history tab — only receiver does logging
+        self._build_history_tab()
 
     def _build_controls(self):
         controls = tk.Frame(self.root, bg=self.COLOURS["panel"], pady=4)
@@ -303,7 +435,7 @@ class ReceiverWindow(BaseWindow):
             ("Port:",        "5002",       6),
         ])
 
-        # Start button
+        # Buttons
         btn_frame = tk.Frame(controls, bg=self.COLOURS["panel"])
         btn_frame.pack(side=tk.RIGHT, padx=8)
 
@@ -314,8 +446,13 @@ class ReceiverWindow(BaseWindow):
         self.start_btn.pack(side=tk.LEFT, padx=4)
 
         self._make_button(
-            btn_frame, "🗑  Clear Log", self._clear_log,
+            btn_frame, "Clear Log", self._clear_log,
             colour=self.COLOURS["border"], width=12
+        ).pack(side=tk.LEFT, padx=4)
+
+        self._make_button(
+            btn_frame, "Refresh History", self._refresh_history,
+            colour=self.COLOURS["border"], width=16
         ).pack(side=tk.LEFT, padx=4)
 
     def _start_receiver(self):
@@ -380,8 +517,8 @@ class AttackerWindow(BaseWindow):
         row2 = tk.Frame(net_frame, bg=self.COLOURS["panel"])
         row2.pack(anchor=tk.W)
         forward_vars = self._add_network_fields(row2, [
-            ("Forward to:",  "127.0.0.1", 14),
-            ("Port:",        "5002",       6),
+            ("Forward to:", "127.0.0.1", 14),
+            ("Port:",       "5002",       6),
         ])
         # Merge into net_vars with distinct keys
         self.net_vars["Forward to:"] = forward_vars["Forward to:"]
@@ -392,7 +529,7 @@ class AttackerWindow(BaseWindow):
         btn_frame.pack(side=tk.RIGHT, padx=8)
 
         self.tamper_var = tk.BooleanVar(value=False)
-        tamper_check = tk.Checkbutton(
+        tk.Checkbutton(
             btn_frame,
             text="⚠️  Active Tamper",
             variable=self.tamper_var,
@@ -402,8 +539,7 @@ class AttackerWindow(BaseWindow):
             selectcolor=self.COLOURS["bg"],
             activebackground=self.COLOURS["panel"],
             cursor="hand2"
-        )
-        tamper_check.pack(pady=(0, 4))
+        ).pack(pady=(0, 4))
 
         self.start_btn = self._make_button(
             btn_frame, "▶  Start Attacker", self._start_attacker,
@@ -415,13 +551,13 @@ class AttackerWindow(BaseWindow):
         if self.running:
             return
 
-        host         = self.net_vars["Listen Host:"].get()
-        port         = int(self.net_vars["Port:"].get())
-        fwd_host     = self.net_vars["Forward to:"].get()
-        fwd_port     = int(self.net_vars["Fwd Port:"].get())
-        tamper       = self.tamper_var.get()
+        host     = self.net_vars["Listen Host:"].get()
+        port     = int(self.net_vars["Port:"].get())
+        fwd_host = self.net_vars["Forward to:"].get()
+        fwd_port = int(self.net_vars["Fwd Port:"].get())
+        tamper   = self.tamper_var.get()
 
-        mode_text = "ACTIVE TAMPER" if tamper else "PASSIVE"
+        mode_text    = "ACTIVE TAMPER" if tamper else "PASSIVE"
         self.running = True
         self.start_btn.config(state=tk.DISABLED, text="⏳ Waiting...")
         self.set_status(f"[{mode_text}] Listening on {host}:{port}...", "warning")
@@ -509,7 +645,7 @@ class SenderWindow(BaseWindow):
         right.pack(side=tk.RIGHT, padx=8)
 
         self.mode_var = tk.StringVar(value="encrypted")
-        mode_frame = tk.Frame(right, bg=self.COLOURS["panel"])
+        mode_frame    = tk.Frame(right, bg=self.COLOURS["panel"])
         mode_frame.pack(pady=(4, 4))
 
         tk.Radiobutton(
@@ -544,10 +680,10 @@ class SenderWindow(BaseWindow):
         filepath = filedialog.askopenfilename(
             title="Select file to send",
             filetypes=[
-                ("All files",       "*.*"),
-                ("Text files",      "*.txt"),
-                ("PDF files",       "*.pdf"),
-                ("Image files",     "*.png *.jpg *.jpeg"),
+                ("All files",   "*.*"),
+                ("Text files",  "*.txt"),
+                ("PDF files",   "*.pdf"),
+                ("Image files", "*.png *.jpg *.jpeg"),
             ]
         )
         if filepath:
@@ -566,7 +702,7 @@ class SenderWindow(BaseWindow):
             queue_log("[ERROR] No file selected.", "error")
             return
 
-        mode_text = "ENCRYPTED" if encrypted else "PLAINTEXT"
+        mode_text    = "ENCRYPTED" if encrypted else "PLAINTEXT"
         self.running = True
         self.send_btn.config(state=tk.DISABLED, text="⏳ Sending...")
         self.set_status(f"Sending [{mode_text}] → {host}:{port}", "info")
@@ -589,6 +725,133 @@ class SenderWindow(BaseWindow):
 
 
 # ─────────────────────────────────────────────
+#  Launcher Window
+# ─────────────────────────────────────────────
+class LauncherWindow:
+    """
+    Opening screen — lets the user choose which role to launch.
+    Appears when no --role flag is passed.
+    """
+
+    COLOURS = BaseWindow.COLOURS
+
+    def __init__(self, root: tk.Tk):
+        self.root = root
+        self.root.title("CNS Secure File Transfer")
+        self.root.geometry("480x420")
+        self.root.configure(bg=self.COLOURS["bg"])
+        self.root.resizable(False, False)
+
+        self._build()
+
+    def _build(self):
+        # Header
+        header = tk.Frame(self.root, bg=self.COLOURS["accent"], pady=16)
+        header.pack(fill=tk.X)
+
+        tk.Label(
+            header,
+            text="🔐  CNS Secure File Transfer",
+            font=("Consolas", 15, "bold"),
+            bg=self.COLOURS["accent"],
+            fg="white"
+        ).pack()
+
+        tk.Label(
+            header,
+            text="Proof of Concept — Select your role to begin",
+            font=("Consolas", 9),
+            bg=self.COLOURS["accent"],
+            fg="#ddd6fe"
+        ).pack(pady=(4, 0))
+
+        # Role buttons
+        body = tk.Frame(self.root, bg=self.COLOURS["bg"], pady=20)
+        body.pack(fill=tk.BOTH, expand=True)
+
+        roles = [
+            ("📥  Receiver", "#16a34a",
+             "Listens for incoming file transfers.\nVerifies integrity and saves the file.",
+             self._launch_receiver),
+            ("💀  Attacker", "#dc2626",
+             "Sits between sender and receiver.\nCan passively snoop or actively tamper.",
+             self._launch_attacker),
+            ("📤  Sender",   "#7c3aed",
+             "Selects and sends a file.\nSupports encrypted and plaintext modes.",
+             self._launch_sender),
+        ]
+
+        for label, colour, description, command in roles:
+            card = tk.Frame(
+                body,
+                bg=self.COLOURS["panel"],
+                pady=10,
+                padx=16,
+                relief=tk.FLAT,
+                bd=0
+            )
+            card.pack(fill=tk.X, padx=32, pady=6)
+
+            tk.Button(
+                card,
+                text=label,
+                command=command,
+                font=("Consolas", 11, "bold"),
+                bg=colour,
+                fg="white",
+                activebackground=self.COLOURS["border"],
+                activeforeground="white",
+                relief=tk.FLAT,
+                cursor="hand2",
+                width=14,
+                pady=8
+            ).pack(side=tk.LEFT, padx=(0, 16))
+
+            tk.Label(
+                card,
+                text=description,
+                font=("Consolas", 9),
+                bg=self.COLOURS["panel"],
+                fg=self.COLOURS["subtext"],
+                justify=tk.LEFT
+            ).pack(side=tk.LEFT, anchor=tk.W)
+
+        # Footer
+        tk.Label(
+            self.root,
+            text="Each role can run on a separate machine over a local network.",
+            font=("Consolas", 8),
+            bg=self.COLOURS["bg"],
+            fg=self.COLOURS["border"]
+        ).pack(side=tk.BOTTOM, pady=8)
+
+    def _launch_receiver(self):
+        self._open_role_window(ReceiverWindow, "📥  RECEIVER NODE")
+
+    def _launch_attacker(self):
+        self._open_role_window(AttackerWindow, "💀  ATTACKER NODE  (MITM)")
+
+    def _launch_sender(self):
+        self._open_role_window(SenderWindow, "📤  SENDER NODE")
+
+    def _open_role_window(self, window_class, title: str):
+        """
+        Hides the launcher and opens the chosen role window.
+        Closing the role window brings the launcher back.
+        """
+        self.root.withdraw()
+
+        role_window = tk.Toplevel(self.root)
+        window_class(role_window)
+
+        def on_close():
+            role_window.destroy()
+            self.root.deiconify()
+
+        role_window.protocol("WM_DELETE_WINDOW", on_close)
+
+
+# ─────────────────────────────────────────────
 #  Entry point
 # ─────────────────────────────────────────────
 def main():
@@ -596,12 +859,11 @@ def main():
     parser.add_argument(
         "--role",
         choices=["sender", "receiver", "attacker"],
-        required=True,
-        help="Which role window to open"
+        default=None,
+        help="Skip launcher and open a role window directly"
     )
     args = parser.parse_args()
 
-    # Patch print before importing any network modules
     patch_print()
 
     root = tk.Tk()
@@ -612,6 +874,8 @@ def main():
         AttackerWindow(root)
     elif args.role == "sender":
         SenderWindow(root)
+    else:
+        LauncherWindow(root)
 
     root.mainloop()
 
